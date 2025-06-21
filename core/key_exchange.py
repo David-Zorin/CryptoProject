@@ -12,7 +12,16 @@ def _inv_mod(a, m): return pow(a, -1, m)
 
 class MHK:
     def __init__(self, n: int = 128):
-        self._w = [random.randint(2 ** i, 2 ** i + 3) for i in range(n)]  # super‑increasing
+        # Generate a proper super-increasing sequence
+        self._w = []
+        current_sum = 0
+        for i in range(n):
+            # Each element must be greater than the sum of all previous elements
+            min_val = current_sum + 1
+            next_val = random.randint(min_val, min_val + random.randint(1, 10))
+            self._w.append(next_val)
+            current_sum += next_val
+        
         self._q = random.randint(sum(self._w) + 1, 2 * sum(self._w))
         self._r = random.randrange(2, self._q)
         while gcd(self._r, self._q) != 1:
