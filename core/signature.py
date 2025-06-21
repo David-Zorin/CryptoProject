@@ -88,10 +88,12 @@ class ECDSA:
     # Hash arbitrary message bytes into an integer z = H(M) via SHA-256 (prepares for signature math)
     @staticmethod
     def _hash_message(data: bytes) -> int:
+        # Digital signature presentation Slide 33: “H(M)” is SHA-256 of the message, as specified in the course DSA Signature Creation
         return int.from_bytes(sha256(data).digest(), 'big')
 
     # Create ECDSA signature (r, s) on data to guarantee authenticity and integrity
     def create_signature(self, data: bytes) -> tuple[int, int]:
+        # Digital signature presentation Slide 33: compute r = (k·G).x mod n and s = k⁻¹·(H(M) + r·d) mod n to form the signature (r,s)
         z = self._hash_message(data)
         while True:
             k = _det_k(self.private_key, z)
@@ -106,6 +108,7 @@ class ECDSA:
     # Verify (r, s) against data and public_key Q to detect any tampering or wrong key
     @staticmethod
     def verify_signature(data: bytes, sig: tuple[int, int], Q: tuple[int, int]) -> bool:
+        # Read a bundle, verify its signature, unwrap the session key, and decrypt back to the original file
         r, s = sig
         if not (1 <= r < n and 1 <= s < n):
             return False
