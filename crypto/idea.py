@@ -23,13 +23,21 @@ class IDEA(BlockCipher):
     @staticmethod
     def _generate_subkeys(u_key: bytes) -> list[int]:
         if len(u_key) != 16:
-            raise ValueError("IDEA expects 128‑bit key")
-        k = [concat16(u_key[2 * i], u_key[2 * i + 1]) for i in range(8)]
-        for i in range(IDEA.ROUNDS * 6 + 4 - 8):
-            j = (i + 8) % 8
-            k.append(((k[-7] << 9) | (k[-6] >> 7)) & 0xFFFF if j else
-                     ((k[-7] << 9) | (k[-6] >> 7)) & 0xFFFF)
-        return k
+            raise ValueError("IDEA expects 128-bit key")
+
+        key128 = int.from_bytes(u_key, 'big')
+        subkeys = []
+
+        for i in range(IDEA.ROUNDS * 6 + 4):
+            if i > 0 and i % 8 == 0:
+                key128 = ((key128 << 25) | (key128 >> 103)) & 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+
+            subkey_position = i % 8
+            bits_to_shift = 112 - (subkey_position * 16)
+            subkey = (key128 >> bits_to_shift) & 0xFFFF
+            subkeys.append(subkey)
+
+        return subkeys
 
     @staticmethod
     def _add(x, y):
