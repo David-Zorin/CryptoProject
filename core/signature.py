@@ -1,13 +1,10 @@
 """
-Minimal ECDSA on secp192r1 (toy sizes).
-Only sign/verify for SHA‑256 digests – hashing may use hashlib (allowed).
+Hardened ECDSA (secp192r1) – pure-Python, RFC-6979-deterministic, no deps.
 """
 from hashlib import sha256
 from random import SystemRandom
 
-rand = SystemRandom()
-
-# ---------- curve parameters (secp192r1) -------------------
+# ——— curve params (SECP192R1 = NIST P-192) ———
 p = 0xfffffffffffffffffffffffffffffffeffffffffffffffff
 a = 0xfffffffffffffffffffffffffffffffefffffffffffffffc
 b = 0x64210519e59c80e70fa7e9ab72243049feb8deecc146b9b1
@@ -16,50 +13,92 @@ Gy = 0x07192b95ffc8da78631011ed6b24cdd573f977a11e794811
 n = 0xffffffffffffffffffffffff99def836146bc9b1b4d22831
 G = (Gx, Gy)
 
+# ——— finite-field helpers ———
+_inv = lambda k, m=p: pow(k % m, m - 2, m)  # Fermat inverse mod m
+_mod = lambda x: x % p
 
-def _inv_mod(k): return pow(k, p - 2, p)
 
-
+# ——— group operations ———
 def _ec_add(P, Q):
-    if P == Q:  # doubling
-        lmbd = (3 * P[0] * P[0] + a) * _inv_mod(2 * P[1]) % p
+    # handle identity
+    if P is None:  return Q
+    if Q is None:  return P
+    # P + (-P)  =  ∞
+    if P[0] == Q[0] and (P[1] + Q[1]) % p == 0:
+        return None
+    # doubling
+    if P == Q:
+        if P[1] == 0:  # tangent is vertical
+            return None
+        l = (3 * P[0] * P[0] + a) * _inv(2 * P[1]) % p
+    # general addition
     else:
-        lmbd = (Q[1] - P[1]) * _inv_mod(Q[0] - P[0]) % p
-    x = (lmbd * lmbd - P[0] - Q[0]) % p
-    y = (lmbd * (P[0] - x) - P[1]) % p
+        l = (Q[1] - P[1]) * _inv(Q[0] - P[0]) % p
+    x = _mod(l * l - P[0] - Q[0])
+    y = _mod(l * (P[0] - x) - P[1])
     return (x, y)
 
 
 def _ec_mul(P, k):
     R = None
-    for i in reversed(bin(k)[2:]):
-        if R: R = _ec_add(R, R)
-        if i == '1':
-            R = P if R is None else _ec_add(R, P)
+    addend = P
+    while k:
+        if k & 1:
+            R = _ec_add(R, addend)
+        addend = _ec_add(addend, addend)
+        k >>= 1
     return R
 
 
+# ——— RFC-6979 deterministic k ———
+def _det_k(d, h):
+    v = b'\x01' * 32
+    k = b'\x00' * 32
+    priv = d.to_bytes(24, 'big')
+    hsh = h.to_bytes(32, 'big')
+    import hmac
+    k = hmac.new(k, v + b'\x00' + priv + hsh, sha256).digest()
+    v = hmac.new(k, v, sha256).digest()
+    k = hmac.new(k, v + b'\x01' + priv + hsh, sha256).digest()
+    v = hmac.new(k, v, sha256).digest()
+    while True:
+        v = hmac.new(k, v, sha256).digest()
+        cand = int.from_bytes(v, 'big') % n
+        if 1 <= cand < n:
+            return cand
+        k = hmac.new(k, v + b'\x00', sha256).digest()
+        v = hmac.new(k, v, sha256).digest()
+
+
+# ——— main API ———
 class ECDSA:
-    def __init__(self):
-        self.d = rand.randrange(1, n - 1)
+    def __init__(self, passphrase: str):
+        self.d = int.from_bytes(sha256(passphrase.encode()).digest(), 'big') % n or 1
         self.Q = _ec_mul(G, self.d)
 
+    @staticmethod
+    def _h(data: bytes) -> int:
+        return int.from_bytes(sha256(data).digest(), 'big')
+
     def sign(self, data: bytes) -> tuple[int, int]:
-        z = int.from_bytes(sha256(data).digest(), 'big')
+        z = self._h(data)
         while True:
-            k = rand.randrange(1, n - 1)
+            k = _det_k(self.d, z)
             x1, _ = _ec_mul(G, k)
             r = x1 % n
-            if r == 0: continue
-            s = (_inv_mod(k) * (z + r * self.d)) % n
-            if s != 0: break
-        return r, s
+            if r == 0:
+                continue
+            s = (_inv(k, n) * (z + r * self.d)) % n
+            if s != 0:
+                return (r, s)
 
-    def verify(self, data: bytes, sig: tuple[int, int]) -> bool:
+    @staticmethod
+    def verify(data: bytes, sig: tuple[int, int], Q: tuple[int, int]) -> bool:
         r, s = sig
-        if not (1 <= r < n and 1 <= s < n): return False
-        z = int.from_bytes(sha256(data).digest(), 'big')
-        w = _inv_mod(s) % n
+        if not (1 <= r < n and 1 <= s < n):
+            return False
+        z = ECDSA._h(data)
+        w = _inv(s, n)
         u1, u2 = (z * w) % n, (r * w) % n
-        X = _ec_add(_ec_mul(G, u1), _ec_mul(self.Q, u2))
-        return (X[0] % n) == r
+        X = _ec_add(_ec_mul(G, u1), _ec_mul(Q, u2))
+        return X is not None and (X[0] % n) == r
