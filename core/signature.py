@@ -14,15 +14,21 @@ n = 0xffffffffffffffffffffffff99def836146bc9b1b4d22831
 G = (Gx, Gy)
 
 # ——— finite-field helpers ———
-_inv = lambda k, m=p: pow(k % m, m - 2, m)  # Fermat inverse mod m
-_mod = lambda x: x % p
+
+# Compute modular inverse of k in the field mod p (needed to divide in finite-field arithmetic)
+_modular_inverse = lambda k, m=p: pow(k % m, m - 2, m)
+# Reduce x modulo p (keeps intermediate values inside the prime field)
+_reduce_mod_p = lambda x: x % p
 
 
 # ——— group operations ———
-def _ec_add(P, Q):
+# Add two elliptic-curve points P and Q (core operation for building scalar multiples)
+def _elliptic_curve_add(P, Q):
     # handle identity
-    if P is None:  return Q
-    if Q is None:  return P
+    if P is None:
+        return Q
+    if Q is None:
+        return P
     # P + (-P)  =  ∞
     if P[0] == Q[0] and (P[1] + Q[1]) % p == 0:
         return None
@@ -30,27 +36,29 @@ def _ec_add(P, Q):
     if P == Q:
         if P[1] == 0:  # tangent is vertical
             return None
-        l = (3 * P[0] * P[0] + a) * _inv(2 * P[1]) % p
+        l = (3 * P[0] * P[0] + a) * _modular_inverse(2 * P[1]) % p
     # general addition
     else:
-        l = (Q[1] - P[1]) * _inv(Q[0] - P[0]) % p
-    x = _mod(l * l - P[0] - Q[0])
-    y = _mod(l * (P[0] - x) - P[1])
+        l = (Q[1] - P[1]) * _modular_inverse(Q[0] - P[0]) % p
+    x = _reduce_mod_p(l * l - P[0] - Q[0])
+    y = _reduce_mod_p(l * (P[0] - x) - P[1])
     return (x, y)
 
 
-def _ec_mul(P, k):
+# Multiply EC point P by scalar k via double-and-add (used to compute k·G or d·G)
+def _elliptic_curve_mul(P, k):
     R = None
     addend = P
     while k:
         if k & 1:
-            R = _ec_add(R, addend)
-        addend = _ec_add(addend, addend)
+            R = _elliptic_curve_add(R, addend)
+        addend = _elliptic_curve_add(addend, addend)
         k >>= 1
     return R
 
 
 # ——— RFC-6979 deterministic k ———
+# Multiply EC point P by scalar k via double-and-add (used to compute k·G or d·G)
 def _det_k(d, h):
     v = b'\x01' * 32
     k = b'\x00' * 32
@@ -72,33 +80,37 @@ def _det_k(d, h):
 
 # ——— main API ———
 class ECDSA:
+    # Build ECDSA keys: derive private_key from passphrase and compute public_key = private_key·G
     def __init__(self, passphrase: str):
-        self.d = int.from_bytes(sha256(passphrase.encode()).digest(), 'big') % n or 1
-        self.Q = _ec_mul(G, self.d)
+        self.private_key = int.from_bytes(sha256(passphrase.encode()).digest(), 'big') % n or 1
+        self.public_key = _elliptic_curve_mul(G, self.private_key)
 
+    # Hash arbitrary message bytes into an integer z = H(M) via SHA-256 (prepares for signature math)
     @staticmethod
-    def _h(data: bytes) -> int:
+    def _hash_message(data: bytes) -> int:
         return int.from_bytes(sha256(data).digest(), 'big')
 
-    def sign(self, data: bytes) -> tuple[int, int]:
-        z = self._h(data)
+    # Create ECDSA signature (r, s) on data to guarantee authenticity and integrity
+    def create_signature(self, data: bytes) -> tuple[int, int]:
+        z = self._hash_message(data)
         while True:
-            k = _det_k(self.d, z)
-            x1, _ = _ec_mul(G, k)
+            k = _det_k(self.private_key, z)
+            x1, _ = _elliptic_curve_mul(G, k)
             r = x1 % n
             if r == 0:
                 continue
-            s = (_inv(k, n) * (z + r * self.d)) % n
+            s = (_modular_inverse(k, n) * (z + r * self.private_key)) % n
             if s != 0:
                 return (r, s)
 
+    # Verify (r, s) against data and public_key Q to detect any tampering or wrong key
     @staticmethod
-    def verify(data: bytes, sig: tuple[int, int], Q: tuple[int, int]) -> bool:
+    def verify_signature(data: bytes, sig: tuple[int, int], Q: tuple[int, int]) -> bool:
         r, s = sig
         if not (1 <= r < n and 1 <= s < n):
             return False
-        z = ECDSA._h(data)
-        w = _inv(s, n)
+        z = ECDSA._hash_message(data)
+        w = _modular_inverse(s, n)
         u1, u2 = (z * w) % n, (r * w) % n
-        X = _ec_add(_ec_mul(G, u1), _ec_mul(Q, u2))
+        X = _elliptic_curve_add(_elliptic_curve_mul(G, u1), _elliptic_curve_mul(Q, u2))
         return X is not None and (X[0] % n) == r
