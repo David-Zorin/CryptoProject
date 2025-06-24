@@ -1,68 +1,105 @@
-import tkinter as tk, threading
+import tkinter as tk, threading, json
+from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
-from typing import Optional
-from tkinter import filedialog, messagebox
-from gui.widget import CryptoGUI
-from core.file_cipher import FileCipher
+from core.secure_transfer import send, receive
 
+# Controller is used to pair between Tk widgets and our project logic
+class _Base(ttk.Frame):
+    def __init__(self, master, fn):
+        super().__init__(master)
+        self.fn, self.inp, self.out = fn, None, None
+        self._ui()
 
-class Controller:
-    def __init__(self, root: tk.Tk):
-        self.root = root
-        self.view = CryptoGUI(root, self)
-        self.input: Optional[Path] = None
-        self.output: Optional[Path] = None
+    def _ui(self):
+        tk.Label(self, text="Input").grid(row=0, column=0, sticky="e")
+        self.e_in = tk.Entry(self, width=40, state="readonly")
+        self.e_in.grid(row=0, column=1, padx=4)
+        tk.Button(self, text="Browse", command=self._sel_in).grid(row=0, column=2)
 
-    # ---------- callbacks ----------------------------------------------------
-    def select_input(self):
-        p = tk.filedialog.askopenfilename()
+        tk.Label(self, text="Output").grid(row=1, column=0, sticky="e")
+        self.e_out = tk.Entry(self, width=40, state="readonly")
+        self.e_out.grid(row=1, column=1, padx=4)
+        tk.Button(self, text="Browse", command=self._sel_out).grid(row=1, column=2)
+
+        tk.Label(self, text="Pass-phrase").grid(row=2, column=0, sticky="e")
+        self.e_pw = tk.Entry(self, show="•", width=22)
+        self.e_pw.grid(row=2, column=1, sticky="w")
+
+        self.pbar = ttk.Progressbar(self, length=360)
+        self.pbar.grid(row=3, columnspan=3, pady=6)
+
+        self.t_log = tk.Text(self, width=50, height=7, state="disabled")
+        self.t_log.grid(row=4, columnspan=3)
+
+        tk.Button(self, text="Run", command=self._go).grid(row=5, column=2, sticky="e")
+
+    def _sel_in(self):
+        p = filedialog.askopenfilename()
         if p:
-            self.input = Path(p)
-            self.view.in_entry.config(state='normal')
-            self.view.in_entry.delete(0, 'end')
-            self.view.in_entry.insert(0, p)
-            self.view.in_entry.config(state='readonly')
+            self.inp = Path(p)
+            self._set(self.e_in, p)
 
-    def select_output(self):
-        p = tk.filedialog.asksaveasfilename()
+    def _sel_out(self):
+        p = filedialog.asksaveasfilename()
         if p:
-            self.output = Path(p)
-            self.view.out_entry.config(state='normal')
-            self.view.out_entry.delete(0, 'end')
-            self.view.out_entry.insert(0, p)
-            self.view.out_entry.config(state='readonly')
+            self.out = Path(p)
+            self._set(self.e_out, p)
 
-    def run(self):
-        if not self.input or not self.output:
-            tk.messagebox.showerror("Error", "Select both files first")
+    def _set(self, entry, val):
+        entry.config(state="normal")
+        entry.delete(0, "end")
+        entry.insert(0, val)
+        entry.config(state="readonly")
+
+    def _go(self):
+        if not all((self.inp, self.out, self.e_pw.get())):
+            messagebox.showerror("Error", "Select files and pass-phrase")
             return
-        key = self.view.key_entry.get()
-        if not key:
-            tk.messagebox.showerror("Error", "Enter a password")
-            return
-        encrypt = self.view.op_var.get() == 'Encrypt'
-        fc = FileCipher(str(self.input), str(self.output), key, encrypt,
-                        progress=self._update_progress)
-        th = threading.Thread(target=lambda: (self._log("Running…"), fc.run(),
-                                              self._log("Done!")))
-        th.start()
+        threading.Thread(target=self._run, daemon=True).start()
 
-    # ---------- helpers ------------------------------------------------------
-    def _update_progress(self, frac: float):
-        self.view.pbar['value'] = frac * 100
-        self.root.update_idletasks()
+    # main run entry-point invoked by the GUI
+    def _run(self):
+        try:
+            self._log("Running…")
+            hdr = self.fn(str(self.inp), str(self.out), self.e_pw.get(), self._upd)
+            if isinstance(hdr, bytes):
+                hdr_view = json.dumps(json.loads(hdr), indent=2)
+            elif isinstance(hdr, (dict, list)):
+                hdr_view = json.dumps(hdr, indent=2)
+            else:
+                hdr_view = str(hdr)
+            self._log("Finished")
+            self._log(hdr_view)
+        except Exception as e:
+            self._log(f"Error: {e}")
 
-    def _log(self, msg: str):
-        t = self.view.status
-        t.config(state='normal')
-        t.insert('end', f'{msg}\n')
-        t.see('end')
-        t.config(state='disabled')
+    def _upd(self, f):
+        self.pbar["value"] = f * 100
+        self.master.update_idletasks()
+
+    def _log(self, m):
+        self.t_log.config(state="normal")
+        self.t_log.insert("end", f"{m}\n")
+        self.t_log.see("end")
+        self.t_log.config(state="disabled")
+
+
+class _Sender(_Base):
+    def __init__(self, master):
+        super().__init__(master, send)
+
+
+class _Receiver(_Base):
+    def __init__(self, master):
+        super().__init__(master, receive)
 
 
 def launch():
     root = tk.Tk()
-    root.title("IDEA cipher using cbc mode")
+    root.title("Secure File Transfer")
+    nb = ttk.Notebook(root)
+    nb.add(_Sender(nb), text="Sender")
+    nb.add(_Receiver(nb), text="Receiver")
+    nb.pack(padx=8, pady=8)
     root.resizable(False, False)
-    Controller(root)
     root.mainloop()
