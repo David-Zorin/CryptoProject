@@ -70,6 +70,7 @@ class ECDSA:
     def create_signature(self, data: bytes) -> tuple[int, int]:
         # compute r = (k·G).x1 mod n and s = k⁻¹·(H(M) + r·d) mod n to form the signature (r,s)
         import hmac
+        # Iterated hash function (RFC 6979) steps for making random_k a deterministic choice
         z = self._hash_message(data) # step 1
         v = b'\x01' * 32
         k = b'\x00' * 32
