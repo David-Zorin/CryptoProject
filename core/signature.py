@@ -103,9 +103,10 @@ class ECDSA:
         w = _modular_inverse(s, n) # step 3
         u1, u2 = (z * w) % n, (r * w) % n # step 4
         X = _elliptic_curve_add(_elliptic_curve_mul(G, u1), _elliptic_curve_mul(Q, u2)) # step 5
-        if X is None:
-            return False
-        else:
-            x1, _ = X
-            return x1 % n == 0
+        return X is not None and (X[0] % n) == r
+        # if X is None:
+        #     return False
+        # else:
+        #     x1, _ = X
+        #     return x1 % n == 0
 

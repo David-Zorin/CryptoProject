@@ -11,7 +11,7 @@ class IDEA:
         self.sub_keys: list[int] = []
         # Generate subkeys from the passphrase(random generate on sender side, built up on receiver side)
         self.set_key(make_key(passphrase, 16))
-
+        self.block_size = 8
     # generate subkeys and invert them to match invert rounds if decrypt mode
     def set_key(self, raw: bytes) -> None:
         temp = self._generate_subkeys(raw)
