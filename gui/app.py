@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 from core.secure_transfer import send, receive
 
-
+# Controller is used to pair between Tk widgets and our project logic
 class _Base(ttk.Frame):
     def __init__(self, master, fn):
         super().__init__(master)
@@ -57,6 +57,7 @@ class _Base(ttk.Frame):
             return
         threading.Thread(target=self._run, daemon=True).start()
 
+    # main run entry-point invoked by the GUI
     def _run(self):
         try:
             self._log("Running…")
