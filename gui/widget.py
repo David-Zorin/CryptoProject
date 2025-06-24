@@ -1,13 +1,14 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 
-
+# Tk.Frame subclass holding all GUI controls
 class CryptoGUI(tk.Frame):
     def __init__(self, master, controller):
         super().__init__(master)
         self.controller = controller
         self._build()
 
+    # build and lay out the widgets (grid geometry)
     def _build(self):
         self.grid(padx=10, pady=10)
         # ------------ file selectors -----------------
