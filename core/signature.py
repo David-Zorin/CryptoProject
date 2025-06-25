@@ -64,7 +64,10 @@ class ECDSA:
     @staticmethod
     def _hash_message(data: bytes) -> int:
         # Digital signature presentation Slide 33: “H(M)” is SHA-256 of the message, as specified in the course DSA Signature Creation
-        return int.from_bytes(sha256(data).digest(), 'big')
+        L_n = sha256(data).digest()  # 32 bytes = 256 bits
+        e = int.from_bytes(L_n, 'big')
+        z = e >> 64  # 256 − 192 = 64
+        return z
 
     # Create ECDSA signature
     def create_signature(self, data: bytes) -> tuple[int, int]:
