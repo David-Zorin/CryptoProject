@@ -103,7 +103,7 @@ class ECDSA:
         r, s = sig
         if not (1 <= r < n and 1 <= s < n): # sanity check - implementation won't allow this to occur
             return False
-        z = ECDSA._hash_message(data) # step 1
+        z = ECDSA._hash_message(data) # step 1 + 2
         w = _modular_inverse(s, n) # step 3
         u1, u2 = (z * w) % n, (r * w) % n # step 4
         X = _elliptic_curve_add(_elliptic_curve_mul(G, u1), _elliptic_curve_mul(Q, u2)) # step 5
