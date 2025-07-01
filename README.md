@@ -7,10 +7,10 @@ This project is developed as part of a college engineering course to explore and
 - **Algorithm**: IDEA cipher with 64-bit blocks
 - **Mode**: Cipher Block Chaining (CBC) for enhanced security
 - **Key Size**: 128-bit session keys
-- **Block Processing**: Files processed in 2MB chunks for efficiency
+- **Block Processing**: Files processed in 2MB chunks
 
 ### Key Exchange
-- **System**: Merkle-Hellman Knapsack (super-increasing sequence)
+- **System**: Merkle-Hellman Knapsack
 - **Purpose**: Securely wrap/unwrap 128-bit session keys
 - **Key Derivation**: Passphrase-based deterministic key generation
 
